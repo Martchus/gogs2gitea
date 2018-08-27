@@ -1,0 +1,117 @@
+#!/usr/bin/perl
+
+use strict;
+use Mojo::UserAgent;
+use Mojo::JSON;
+
+# define Gogs credentials
+my $gogs_url = $ENV{GOGS_URL} // 'https://martchus.no-ip.biz/gogs';
+my $gogs_api_base = $ENV{GOGS_API_BASE} // 'api/v1';
+my $gogs_user_name = $ENV{GOGS_USER_NAME} // 'Martchus';
+my $gogs_password = $ENV{GOGS_PASSWORD};
+
+# define Gitea credentials
+my $gitea_url = $ENV{GITEA_URL} // 'https://martchus.no-ip.biz/gitea';
+my $gitea_api_base = $ENV{GITEA_API_BASE} // 'api/v1';
+my $gitea_user_name = $ENV{GITEA_USER_NAME} // 'Martchus';
+my $gitea_token = $ENV{GITEA_TOKEN};
+
+# check whether Gogs password and Gitea token have been specified
+if (!$gogs_password || !$gitea_token) {
+    print("Set environment variables GOGS_PASSWORD and GITEA_TOKEN.\n");
+    exit(1);
+}
+
+# setup user agent
+my $ua  = Mojo::UserAgent->new;
+$ua->max_redirects(5);
+
+# login Gogs
+my $gogs_login_url = "$gogs_url/user/login";
+my $gogs_login_res = $ua->post($gogs_login_url, form => {
+    user_name => $gogs_user_name,
+    password => $gogs_password,
+})->result;
+if (!$gogs_login_res->is_success && $gogs_login_res->code != 301) {
+    print("Unable to login via $gogs_login_url.\n");
+    if ($gogs_login_res->is_error) {
+        my $message = $gogs_login_res->message;
+        print("error message: $message\n");
+    }
+    exit(-1);
+}
+
+# query repos from Gogs
+my $gogs_repos_url = "$gogs_url/$gogs_api_base/user/repos";
+my $gogs_repos_res = $ua->get($gogs_repos_url)->result;
+if (!$gogs_repos_res->is_success) {
+    print("Unable to query repos from $gogs_repos_url.\n");
+    if ($gogs_repos_res->is_error) {
+        my $message = $gogs_repos_res->message;
+        print("error message: $message\n");
+    }
+    exit(-2);
+}
+my $gogs_repos_json = $gogs_repos_res->json;
+if (!$gogs_repos_json) {
+    print("$gogs_repos_url returned no JSON.\n");
+    exit(-3);
+}
+
+# get user ID on Gitea
+my $gitea_user_info_url = "$gitea_url/$gitea_api_base/users/$gitea_user_name?token=$gitea_token";
+my $gitea_user_info_res = $ua->get($gitea_user_info_url)->result;
+if (!$gitea_user_info_res->is_success) {
+    print("Unable to get Gitea user info via $gitea_user_info_url.\n");
+    if ($gitea_user_info_res->is_error) {
+        my $message = $gitea_user_info_res->message;
+        print("error message: $message\n");
+    }
+    exit(-4);
+}
+my $gitea_user_info_json = $gitea_user_info_res->json;
+if (!$gogs_repos_json) {
+    print("$gitea_user_info_url returned no JSON.\n");
+    exit(-5);
+}
+my $gitea_user_id = $gitea_user_info_json->{id};
+if (!defined($gitea_user_id)) {
+    print("$gitea_user_info_url returned no user ID.\n");
+    exit(-6);
+}
+print("user ID on Gitea: $gitea_user_id\n");
+
+# migrate repos to Gitea
+my $gitea_migrate_url = "$gitea_url/$gitea_api_base/repos/migrate?token=$gitea_token";
+for my $repo (@$gogs_repos_json) {
+    my $repo_name = $repo->{name};
+    my $clone_url = $repo->{clone_url};
+    my $description = $repo->{description};
+    my $public = !$repo->{private} || (ref $repo->{private} eq 'ARRAY' && $repo->{private}->[0] eq 'empty');
+    my $public_yes_no = $public ? 'yes' : 'no';
+
+    print("Migrating $repo_name\n");
+    print("  clone url:   $clone_url\n");
+    print("  description: $description\n");
+    print("  public:      $public_yes_no\n");
+
+    my $gitea_migrate_res = $ua->post($gitea_migrate_url, json => {
+        auth_username => $gogs_user_name,
+        auth_password => $gogs_password,
+        repo_name => $repo_name,
+        clone_addr => $clone_url,
+        description => $description,
+        mirror => Mojo::JSON->false,
+        private => ($public ? Mojo::JSON->false : Mojo::JSON->true),
+        uid => $gitea_user_id,
+    })->result;
+
+    if (!$gitea_migrate_res->is_success) {
+        print("Unable to migrate $repo_name via $gitea_migrate_url.\n");
+        if ($gitea_migrate_res->is_error) {
+            my $message = $gitea_migrate_res->message;
+            print("error message: $message\n");
+        }
+        exit(-7);
+    }
+}
