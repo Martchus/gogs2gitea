@@ -5,13 +5,13 @@ use Mojo::UserAgent;
 use Mojo::JSON;
 
 # define Gogs credentials
-my $gogs_url = $ENV{GOGS_URL} // 'https://martchus.no-ip.biz/gogs';
+my $gogs_url = $ENV{GOGS_URL} // 'https://martchus.dyn.f3l.de/gogs';
 my $gogs_api_base = $ENV{GOGS_API_BASE} // 'api/v1';
 my $gogs_user_name = $ENV{GOGS_USER_NAME} // 'Martchus';
 my $gogs_password = $ENV{GOGS_PASSWORD};
 
 # define Gitea credentials
-my $gitea_url = $ENV{GITEA_URL} // 'https://martchus.no-ip.biz/gitea';
+my $gitea_url = $ENV{GITEA_URL} // 'https://martchus.dyn.f3l.de/gitea';
 my $gitea_api_base = $ENV{GITEA_API_BASE} // 'api/v1';
 my $gitea_user_name = $ENV{GITEA_USER_NAME} // 'Martchus';
 my $gitea_token = $ENV{GITEA_TOKEN};
